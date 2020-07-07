@@ -37,5 +37,27 @@
 	   }
 	 }
 	 return result;
- } 
+ }
+
+/**
+ * Возвращает коллекцию актуальных интеграций в заданную версию.
+ * Под 'актуальными' подразумеваются еще непрошедшие (useErrorStates = false) или в том числе прошедшие с
+ * ошибкой (useErrorStates = true) интеграции в незакрытые задачи.
+ *
+ * @param targetVersion - версия, интеграции в которую ищем
+ * @param useErrorStates - возвращать или нет интеграции со статусами 'manageError' и 'testingError' (иногда может
+ * понадобиться, так как они могут быть перезапущены)
+ * @return коллекция актуальных интеграций
+ */
+def listActualIntegrations(def targetVersion, def useErrorStates = false)
+{
+	//Все возможные варианты: ['inprogress', 'queued', 'registered', 'aborted', 'closed', 'manageError', 'testingError']
+	def INTEGRATION_ACTUAL_CODES = ['inprogress', 'queued', 'registered'];
+	if(useErrorStates)
+	{
+		INTEGRATION_ACTUAL_CODES += ['manageError', 'testingError'];
+	}
+	def integrations = utils.find('integration', ['versionLink' : targetVersion, 'state' : INTEGRATION_ACTUAL_CODES ]);
+	return integrations.findAll{ it.issue?.state != 'closed' };
+}
  
