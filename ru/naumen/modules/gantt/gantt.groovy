@@ -145,7 +145,7 @@ def getTztOnTaskByUserInHours(def task, def user)
 def getServiceTimeForCurrentDate(def user)
 {
     def serviceTime = getUserServiceTime(user);
-    return api.timing.addWorkingHours(null, 0, serviceTime, user?.timeZone);
+    return modules.ganttTiming.addWorkingHours(null, 0, serviceTime, user?.timeZone);
 }
 
 def getUserServiceTime(def user)
@@ -163,7 +163,7 @@ def getUserServiceTime(def user)
  */
 def getTaskServiceTimeMills(def task, def user)
 {
-    return task.devStart == null ? 0 : api.timing.serviceTime(getUserServiceTime(user), user.timeZone, task.devStart, getServiceTimeForCurrentDate(user));
+    return task.devStart == null ? 0 : modules.ganttTiming.serviceTime(getUserServiceTime(user), user.timeZone, task.devStart, getServiceTimeForCurrentDate(user));
 }
 
 /**
@@ -185,12 +185,12 @@ def getExpectedEndDate(def task, def expDevStart)
     def user = task.respDevelop;
     def startDate = task.devStart == null ? expDevStart : task.devStart;
     //Изначальное планируемое время завершения разработки: дата начала разработки + оценка разработки с учетом класса обслуживания
-    def plannedDate = api.timing.addWorkingHours(startDate, getTaskEstDevTimeInHours(task), getUserServiceTime(user), user.timeZone);
+    def plannedDate = modules.ganttTiming.addWorkingHours(startDate, getTaskEstDevTimeInHours(task), getUserServiceTime(user), user.timeZone);
     //Разница между ожидаемым временем по классу обслуживания, прошедшим с начала разработки и списанными ТЗТ на задачу (мс)
     def progressDeltaMs = getTaskServiceTimeMills(task, user) - (getTztOnTaskByUserInHours(task, user) * 60 * 60 * 1000);
     //Добавляем к изначально-запланированной дате завершения разницу между полным временем обслуживания и фактическими ТЗТ (в часах).
     //Если списано больше ТЗТ (например, работал в выходные), то ожидаемое время завершения разработки уменьшится
-    def expectedEndDate = api.timing.addWorkingHours(plannedDate, (int)(progressDeltaMs/1000/60/60), getUserServiceTime(user), user.timeZone);
+    def expectedEndDate = modules.ganttTiming.addWorkingHours(plannedDate, (int)(progressDeltaMs/1000/60/60), getUserServiceTime(user), user.timeZone);
     //Ожидаемое время завершения работ не должно быть меньше даты начала работ (такое возможно при превышении ТЗТ)
     expectedEndDate = (expectedEndDate.compareTo(startDate) < 0) ? startDate : expectedEndDate;
     //Значения в прошлом тоже не возвращаем
