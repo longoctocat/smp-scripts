@@ -1,14 +1,8 @@
 package ru.naumen.modules.gantt.timing;
 
 import javax.annotation.Nullable;
-import groovy.transform.Field;
 import ru.naumen.core.shared.IUUIDIdentifiable;
 import ru.naumen.core.server.catalog.servicetime.ServiceTimeCatalogItem;
-
-@Field
-def prefixObjectLoaderService = api.timing.prefixObjectLoaderService;
-@Field
-def serviceTimeUtils = api.timing.serviceTimeUtils;
 
 /**
  * Получение регламентного периода обслуживания, вычисленного по дате окончания периодa обслуживания
@@ -23,6 +17,10 @@ def serviceTimeUtils = api.timing.serviceTimeUtils;
  */
 public long serviceTime(IUUIDIdentifiable serviceTime, IUUIDIdentifiable timeZone, Date startTime, Date endTime)
 {
+    def timingApi = beanFactory.getBean('timing');
+    def prefixObjectLoaderService = timingApi.prefixObjectLoaderService;
+    def serviceTimeUtils = timingApi.serviceTimeUtils;
+
     if(serviceTime instanceof ServiceTimeCatalogItem)
     {
         def tz = prefixObjectLoaderService.get(timeZone.getUUID());
@@ -31,7 +29,7 @@ public long serviceTime(IUUIDIdentifiable serviceTime, IUUIDIdentifiable timeZon
         calculator.setEndDate(endTime);
         return calculator.getServiceTime();
     }
-    return api.timing.serviceTime(serviceTime, timeZone, startTime, endTime);
+    return timingApi.serviceTime(serviceTime, timeZone, startTime, endTime);
 }
 
 /**
@@ -48,6 +46,9 @@ public long serviceTime(IUUIDIdentifiable serviceTime, IUUIDIdentifiable timeZon
 public Date addWorkingHours(@Nullable Date date, int amountOfHours, IUUIDIdentifiable serviceTime,
                             @Nullable IUUIDIdentifiable timeZone)
 {
+    def timingApi = beanFactory.getBean('timing');
+    def serviceTimeUtils = beanFactory.getBean(ru.naumen.core.server.catalog.servicetime.ServiceTimeCatalogUtils.class);
+
     if(serviceTime instanceof ServiceTimeCatalogItem)
     {
         def tz = api.timing.getTimeZoneIfNotNull(timeZone);
@@ -56,5 +57,5 @@ public Date addWorkingHours(@Nullable Date date, int amountOfHours, IUUIDIdentif
         dateOperationHelper.setTimeZone(tz);
         return dateOperationHelper.addWorkingHours(date, amountOfHours);
     }
-    return api.timing.addWorkingHours(date, amountOfHours, serviceTime, timeZone);
+    return timingApi.addWorkingHours(date, amountOfHours, serviceTime, timeZone);
 }
