@@ -18,8 +18,8 @@ import ru.naumen.core.server.catalog.servicetime.ServiceTimeCatalogItem;
 public long serviceTime(IUUIDIdentifiable serviceTime, IUUIDIdentifiable timeZone, Date startTime, Date endTime)
 {
     def timingApi = beanFactory.getBean('timing');
-    def prefixObjectLoaderService = timingApi.prefixObjectLoaderService;
-    def serviceTimeUtils = timingApi.serviceTimeUtils;
+    def prefixObjectLoaderService = beanFactory.getBean(ru.naumen.core.server.objectloader.PrefixObjectLoaderServiceImpl.class);
+    def serviceTimeUtils = beanFactory.getBean(ru.naumen.core.server.catalog.servicetime.ServiceTimeCatalogUtils.class);
 
     if(serviceTime instanceof ServiceTimeCatalogItem)
     {

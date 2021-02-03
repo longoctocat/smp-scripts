@@ -7,6 +7,7 @@ package ru.naumen.modules.gantt;
  */
 
 import groovy.transform.Field
+import groovy.time.TimeCategory
 
 //def user = utils.get('employee$1828501');
 //def user = subject;
@@ -339,3 +340,91 @@ def calcExpectedDatesForDevsInTeam(def team)
         calcExpectedDatesForEmplTasks(dev);
     }
 }
+
+// *************** <Производительность разработчиков> ***************
+/**
+ * Рассчитывает коэффициенты производительности разработчика по закрытым задачам на разработку (devTask),
+ * в которых он является ответственным разработчиком и возвращает их в виде мапы с ключами:
+ * <li>'bug' - производительность по дефектам</li>
+ * <li>'dev' - производительность по НЕдефектам (то есть задачам на разработку и работам)</li>
+ * <li>'total' - суммарная производительность</li>
+ *
+ * Каждый коэффициент есть отношение оценочного времени разработки к списанному данным разработчиком времени
+ *
+ * @param employee - сотрудник (разработчик), для которого рассчитывается производительность
+ * @param toDate - дата окончания периода, по которому рассчитывается статистика
+ * @param monthCount - количество месяцев, отнимаемых от {@code toDate} для вычисления даты начала периода статистики
+ * @return мапа с ключами 'bug', 'dev', 'total' и вещественным коэффициентом в качестве значения (округлен до 2-х
+ * знаков полсле запятой)
+ */
+def calcDevPerformance(def employee, def toDate = new Date(), def monthCount = 6)
+{
+    //def empl = utils.get('employee$79380123');
+    //def toDate = Date.parse("yyyy-MM-dd","2020-05-30");
+
+    // КОНСТАНТЫ
+    // Индексы в результирующем наборе
+    def CASE_INDX = 2, EST_INDX = 3, LOG_INDX = 4;
+    // Код типа "Дефект"
+    def BUG_CASE_ID = 'bug';
+    // Ключи в результирующей мапе
+    def KEY_TOTAL = 'total';
+    def KEY_BUG = 'bug';
+    def KEY_DEV = 'dev';
+
+    // ОСНОВНОЙ БЛОК
+    def fromDate;
+    use(TimeCategory)
+            {
+                fromDate = toDate - monthCount.month
+            }
+
+    def qr = api.db.query(
+            '''select 
+	            smrmTask.title, smrmTask.id, smrmTask.metaCaseId, smrmTask.devTime/60 as est, sum(ReportTime) as loggedDev 
+	        from report tzt
+            where 
+                smrmTask.id in (
+                    select smrmTask.id
+                    from report
+                    where
+                    dateReort between :from and :to
+                    and state <> 'deny'
+                    and author.id = :author
+                    and smrmTask.state = 'closed'
+                    and smrmTask.respDevelop = author
+                    group by smrmTask.id
+                    )
+	            and author.id = :author
+            group by smrmTask.title, smrmTask.id, smrmTask.metaCaseId, smrmTask.devTime''').set(
+                'from', fromDate).set('to', toDate).set('author', employee).list();
+
+    logger.info('Employee : ' + employee?.title);
+
+    def totalEst = 0, totalLogged = 0, totalEstBug = 0, totalLoggedBug = 0;
+
+    qr.each {
+        totalEst += it[EST_INDX] ? it[EST_INDX] : 0;
+        totalLogged += it[LOG_INDX] ? it[LOG_INDX] : 0;
+        if (BUG_CASE_ID == it[CASE_INDX]) {
+            totalEstBug += it[EST_INDX] ? it[EST_INDX] : 0;
+            totalLoggedBug += it[LOG_INDX] ? it[LOG_INDX] : 0;
+        }
+        logger.info(it.join(" : "));
+    }
+
+    def totalEstDevWrk = totalEst - totalEstBug;
+    def totalLoggedDevWrk = totalLogged - totalLoggedBug;
+
+    logger.info('totalEst : ' + totalEst + '; totalLogged : ' + totalLogged);
+    logger.info('totalEstBug : ' + totalEstBug + '; totalLoggedBug : ' + totalLoggedBug);
+    logger.info('totalEstDevWrk : ' + totalEstDevWrk + '; totalLoggedDevWrk : ' + totalLoggedDevWrk);
+
+    def result = [:]
+    result[KEY_BUG] = totalEstBug == 0 ? 0 : Math.round(totalLoggedBug / totalEstBug * 100) / 100;
+    result[KEY_DEV] = totalEstDevWrk == 0 ? 0 : Math.round(totalLoggedDevWrk / totalEstDevWrk * 100) / 100;
+    result[KEY_TOTAL] = totalEst == 0 ? 0 : Math.round(totalLogged / totalEst * 100) / 100;
+
+    return result
+}
+// *************** </Производительность разработчиков> ***************
