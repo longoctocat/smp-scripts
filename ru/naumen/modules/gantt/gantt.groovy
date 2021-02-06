@@ -1,4 +1,4 @@
-package ru.naumen.modules.gantt;
+package ru.naumen.modules.gantt
 
 /**
  * Вспомогательные функции для вычисления планируемого времени взятия в разработку / завершения разработки задач для отображения их на диаграмме Ганта
@@ -6,8 +6,10 @@ package ru.naumen.modules.gantt;
  * @since 2019.11.02
  */
 
-import groovy.transform.Field
-import groovy.time.TimeCategory
+import groovy.json.JsonBuilder;
+import groovy.json.JsonSlurper;
+import groovy.transform.Field;
+import groovy.time.TimeCategory;
 
 //def user = utils.get('employee$1828501');
 //def user = subject;
@@ -15,6 +17,18 @@ import groovy.time.TimeCategory
 @Field NOT_CLOSED_STATES = ['wip', 'registered', 'plan', 'codeReview', 'integration', 'negotAnalytics', 'manualTesting', 'flk', 'assessment', 'negotiation', 'defectReview', 'postponed', 'toAnalyst'];
 
 @Field IN_PROGRESS_STATES = ['wip', 'codeReview', 'integration', 'manualTesting', 'flk', 'postponed', 'toAnalyst'];
+
+//<Профиль разработчика>
+@Field def KEY_PERF = 'perf';
+@Field def KEY_PROF = 'prof';
+@Field def KEY_DATE = 'date';
+@Field def KEY_PERF_BUG = 'bug';
+@Field def KEY_PERF_DEV = 'dev';
+@Field def KEY_PERF_TOTAL = 'total';
+@Field def KEY_PROF_DEV = 'dev';
+@Field def KEY_PROF_TOTAL = 'total';
+@Field def KEY_PROF_KOEF = 'koef';
+//</Профиль разработчика>
 
 def getDefaultServiceTime()
 {
@@ -361,16 +375,16 @@ def calcDevPerformance(def employee, def toDate = new Date(), def monthCount = 6
 {
     //def empl = utils.get('employee$79380123');
     //def toDate = Date.parse("yyyy-MM-dd","2020-05-30");
+    if(!isDeveloper(employee))
+    {
+        return [:];
+    }
 
     // КОНСТАНТЫ
     // Индексы в результирующем наборе
     def CASE_INDX = 2, EST_INDX = 3, LOG_INDX = 4;
     // Код типа "Дефект"
     def BUG_CASE_ID = 'bug';
-    // Ключи в результирующей мапе
-    def KEY_TOTAL = 'total';
-    def KEY_BUG = 'bug';
-    def KEY_DEV = 'dev';
 
     // ОСНОВНОЙ БЛОК
     def fromDate;
@@ -421,10 +435,158 @@ def calcDevPerformance(def employee, def toDate = new Date(), def monthCount = 6
     logger.info('totalEstDevWrk : ' + totalEstDevWrk + '; totalLoggedDevWrk : ' + totalLoggedDevWrk);
 
     def result = [:]
-    result[KEY_BUG] = totalEstBug == 0 ? 0 : Math.round(totalLoggedBug / totalEstBug * 100) / 100;
-    result[KEY_DEV] = totalEstDevWrk == 0 ? 0 : Math.round(totalLoggedDevWrk / totalEstDevWrk * 100) / 100;
-    result[KEY_TOTAL] = totalEst == 0 ? 0 : Math.round(totalLogged / totalEst * 100) / 100;
+    result[KEY_PERF_BUG] = totalEstBug == 0 ? 0 : Math.round(totalLoggedBug / totalEstBug * 100) / 100;
+    result[KEY_PERF_DEV] = totalEstDevWrk == 0 ? 0 : Math.round(totalLoggedDevWrk / totalEstDevWrk * 100) / 100;
+    result[KEY_PERF_TOTAL] = totalEst == 0 ? 0 : Math.round(totalLogged / totalEst * 100) / 100;
 
     return result
 }
+
+/**
+ * Является ли сотрудник разработчиком?
+ *
+ * @param employee - сотрудник
+ * @return true, если является, иначе false
+ */
+def isDeveloper(def employee)
+{
+    def team = utils.get('team$84663101'); //Команда "Релизная разработка"
+    return team?.members?.contains(employee);
+}
+
+/**
+ * Создает "Профиль разработчика", который имеет формат:
+ * {
+ *  "perf":
+ *      {
+ *          "bug": 1.15,
+ *          "dev": 1.36,
+ *          "total": 1.26
+ *      },
+ *  "prof":
+ *      {
+ *          "dev": 150.92,
+ *          "total": 176.01,
+ *          "koef": 0.86
+ *      },
+ *  "date": "05.02.2021"
+ * }
+ * @param employee - разработчик, профиль которого требуется создать
+ * @return мапа в формате, описанном выше
+ */
+def createDevProfile(def employee, def toDate = new Date(), def monthCount = 6)
+{
+    def result = [:];
+    result[KEY_PERF] = calcDevPerformance(employee, toDate, monthCount);
+    result[KEY_PROF] = calcDevTimeProfile(employee, toDate, monthCount);
+    result[KEY_DATE] = new Date().format('dd.MM.yyyy' );
+    return result;
+}
+
+def toJsonString(def object)
+{
+    return object ? new JsonBuilder(object).toPrettyString() : "";
+}
+
+def parseObject(def jsonString)
+{
+    def parser = new JsonSlurper()
+    try
+    {
+        return parser.parseText(jsonString);
+    }
+    catch(Exception e)
+    {
+        return null;
+    }
+}
+
+def getPerfKey(def jsonString, def key)
+{
+    def map = parseObject(jsonString);
+    return map ? map[KEY_PERF][key] : 1;
+}
+
+def getPerfTotal(def jsonString)
+{
+    return getPerfKey(jsonString, KEY_PERF_TOTAL);}
+
+def getPerfBug(def jsonString)
+{
+    return getPerfKey(jsonString, KEY_PERF_BUG);
+}
+
+def getPerfDev(def jsonString)
+{
+    return getPerfKey(jsonString, KEY_PERF_DEV);
+}
+
+/**
+ * Рассчитывает коэффициент ТЗТ на разработку (“prof”), то есть отношение ТЗТ, списанных на задачи разработки
+ * (devTask) в которых данный сотрудник является ответственным разработчиком, к общему объему списанных ТЗТ
+ * за некоторый период времени (например, полгода) и возвращает их в виде мапы с ключами:
+ * <li>'dev' - трудозатраты (в часах), списанные на задачи разработки (devTask), в которых данный сотрудник
+ *  является ответственным разработчиком</li>
+ * <li>'total' - общий объем списанных ТЗТ</li>
+ * <li>'koef' - отношение ТЗТ на разработку к общему (округлен до 2-х знаков полсле запятой)</li>
+ *
+ * @param employee - сотрудник (разработчик), для которого рассчитывается профиль
+ * @param toDate - дата окончания периода, по которому рассчитывается статистика
+ * @param monthCount - количество месяцев, отнимаемых от {@code toDate} для вычисления даты начала периода статистики
+ * @return мапа с ключами 'dev', 'total', 'koef' и вещественным коэффициентом в качестве значения
+ */
+def calcDevTimeProfile(def employee, def toDate = new Date(), def monthCount = 6)
+{
+    //def empl = utils.get('employee$1828501'); //Меркульев
+    if(!isDeveloper(employee))
+    {
+        return [:];
+    }
+
+    // КОНСТАНТЫ
+    // Индексы в результирующем наборе
+    def DEV_INDX = 0, TOTAL_INDX = 1;
+
+    // ОСНОВНОЙ БЛОК
+    def fromDate;
+    use(TimeCategory)
+    {
+        fromDate = toDate - monthCount.month
+    }
+
+    def queryString =
+            '''select sum(ReportTime) as dev, (
+	            select sum(ReportTime)
+		            from report
+		            where
+			            dateReort between :from and :to
+			            and state <> 'deny'
+			        and author.id = :author
+		        ) as total
+	            from report
+                where 
+                    dateReort between :from and :to
+                    and state <> 'deny'
+                    and author.id = :author
+                    and smrmTask.respDevelop = author
+                    ''';
+
+    def qr = api.db.query(queryString).set('from', fromDate).set('to', toDate).set('author', employee).list().get(0);
+    def dev = qr[DEV_INDX] ? (Math.round(qr[DEV_INDX] * 100) / 100) : 0;
+    def total = qr[TOTAL_INDX] ? (Math.round(qr[TOTAL_INDX] * 100) / 100) : 0;
+    def koef = total ? (Math.round(dev / total * 100) / 100) : 0;
+    logger.info('Employee : ' + employee?.title + ' : dev : ' + dev + '; total : ' + total + '; koef : ' + koef);
+    def result = [:]
+    result[KEY_PROF_DEV] = dev;
+    result[KEY_PROF_TOTAL] = total;
+    result[KEY_PROF_KOEF] = koef;
+    return result;
+}
+
+def getProfKoef(def jsonString)
+{
+    def map = parseObject(jsonString);
+    return map ? map[KEY_PROF][KEY_PROF_KOEF] : 0;
+}
+
 // *************** </Производительность разработчиков> ***************
