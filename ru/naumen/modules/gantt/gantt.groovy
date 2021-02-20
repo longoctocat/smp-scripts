@@ -30,6 +30,11 @@ import groovy.time.TimeCategory;
 @Field def KEY_PROF_KOEF = 'koef';
 //</Профиль разработчика>
 
+//<Обогащение классов обслуживания> ****************
+//Максимальная продолжительность отпуска. Для того, чтобы обезопасить себя от случайной ошибки в дате.
+@Field def MAX_VOCATION_LEN = 60; //Вряд ли реальный интервал превысит 60 дней
+//</Обогащение классов обслуживания> ****************
+
 def getDefaultServiceTime()
 {
     //класс обслуживания по умолчанию (40 часов, с 8:00 до 17:00)
@@ -451,7 +456,8 @@ def calcDevPerformance(def employee, def toDate = new Date(), def monthCount = 6
 def isDeveloper(def employee)
 {
     def team = utils.get('team$84663101'); //Команда "Релизная разработка"
-    return team?.members?.contains(employee);
+    def excludedDevList = ['employee$2317103']; //Мохов
+    return team?.members?.contains(employee) && !excludedDevList.contains(employee?.UUID);
 }
 
 /**
@@ -589,4 +595,173 @@ def getProfKoef(def jsonString)
     return map ? map[KEY_PROF][KEY_PROF_KOEF] : 0;
 }
 
+def createTeamDevProfile(def team, def toDate = new Date(), def monthCount = 6)
+{
+    //def team = utils.get('team$59456401'); // Релизная.ЕКБ
+    //def toDate = Date.parse("yyyy-MM-dd","2020-05-01");
+    //def monthCount = 2;
+    def teamDevProf;
+    //ВНИМАНИЕ! Просто делить все результаты на кол-во разработчиков нельзя, так как
+    //если разработчик, например, не делал дефекты, у него в производительности стоит bug = 0
+    //и следовательно это уменьшит коэффициент. Поэтому нужно не учитывать нули в параметрах
+    //производительности разработчика и делить каждый показатель на количество разработчиков,
+    //у которых в данном показателе не 0.
+    def devCnt = 0, bugCnt = 0, totalCnt = 0;
+
+    team?.members?.each
+            {
+                if(modules?.gantt?.isDeveloper(it))
+                {
+                    def devProf = modules?.gantt?.createDevProfile(it, toDate, monthCount);
+                    logger.info("rrr " +it.title + ":"+ modules?.gantt?.toJsonString(devProf));
+                    if(devProf[KEY_PERF][KEY_PERF_BUG] != 0) { bugCnt++; }
+                    if(devProf[KEY_PERF][KEY_PERF_DEV] != 0) { devCnt++; }
+                    if(devProf[KEY_PERF][KEY_PERF_TOTAL] != 0) { totalCnt++; }
+                    if(!teamDevProf)
+                    {
+                        teamDevProf = devProf.clone();
+                    }
+                    else
+                    {
+                        teamDevProf.each{ k, v ->
+                            if( !KEY_DATE.equals(k) )
+                            {
+                                v.each{ k2, v2 ->
+                                    logger.info(it.title + " : " + k + " " + k2 + " : " + v2)
+                                    teamDevProf[k][k2] += devProf[k][k2];
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+    if(teamDevProf)
+    {
+        if(bugCnt != 0)
+        {
+            teamDevProf[KEY_PERF][KEY_PERF_BUG] = Math.round(teamDevProf[KEY_PERF][KEY_PERF_BUG] / bugCnt * 100) / 100;
+        }
+        if(devCnt != 0)
+        {
+            teamDevProf[KEY_PERF][KEY_PERF_DEV] = Math.round(teamDevProf[KEY_PERF][KEY_PERF_DEV] / devCnt * 100) / 100;
+        }
+        if(totalCnt != 0)
+        {
+            teamDevProf[KEY_PERF][KEY_PERF_TOTAL] = Math.round(teamDevProf[KEY_PERF][KEY_PERF_TOTAL] / totalCnt * 100) / 100;
+        }
+        if(teamDevProf[KEY_PROF][KEY_PROF_TOTAL] != 0)
+        {
+            teamDevProf[KEY_PROF][KEY_PROF_KOEF] = Math.round(teamDevProf[KEY_PROF][KEY_PROF_DEV] / teamDevProf[KEY_PROF][KEY_PROF_TOTAL] * 100) / 100;
+        }
+    }
+
+    return teamDevProf
+
+}
 // *************** </Производительность разработчиков> ***************
+// *************** <Обогащение классов обслуживания> *****************
+
+/**
+ * Возвращает список будущих неотмененных отпусков/отгулов/болезней сотрудника
+ * @param employee
+ */
+def listPlannedVocations(def employee)
+{
+    //def empl = utils.get('employee$2162702'); //Борисов
+    def currentDate = new Date();
+    def EXCL_VOC_STATES = ['cancel']; //Исключаемые из выборки статусы отпусков
+    //Отпуск.Сотрудник уходящий в отпуск (empl) <--> Сотрудник Naumen.Отпуска сотрудника (vocations)
+    return employee?.vocations.findAll{ it.dateTo > currentDate && !EXCL_VOC_STATES.contains(it.state)};
+}
+
+def printPeriods(def st)
+{
+    logger.info('Periods for ST: ' + st?.title + ' (' + st?.UUID + ')');
+    st?.periods?.each {
+        def stime = it.getStartTime()/(1000*60*60);
+        def et = it.getEndTime()/(1000*60*60);
+        logger.info(it.UUID + ': ' + it.getDayOfLocalWeek() + ": " + it.getStartTime() + ": " + it.getEndTime() + " (" + stime + ": " + et + ")");
+    }
+}
+
+def printExclusions(def st)
+{
+    logger.info('Exclusions for ST: ' + st?.title + ' (' + st?.UUID + ')');
+    st?.exclusions?.each {
+        logger.info(it.UUID + ': ' + it.getExclusionDate());
+    }
+}
+
+/**
+ * Является ли переданный объект персональным классом обслуживания
+ * (см.: https://naupp.naumen.ru/sd/operator/#uuid:smrmTask$111379433)
+ * @param st - класс обслуживания для проверки
+ * @return true - КОКС, false - иначе
+ */
+def isPersonalSt(def st)
+{
+    return st?.parent && st?.employee;
+}
+
+/**
+ * Обновляет периоды обслуживания для персонального класса обслуживания (КОКС) в соответствии с коэффициентом,
+ * определяющим, какой процент времени разработчик тратит на задачи разработки, в которых он является
+ * ответственным разработчиком (см.: https://naupp.naumen.ru/sd/operator/#uuid:changeRecords$114914502).
+ * @param st - пресональный класс обслуживания
+ * @param koef - коэффициент, определяющий процент времени, который разработчик тратит на задачи разработки,
+ * в которых он является ответственным разработчиком (вещественное число от 0 до 1)
+ */
+def updatePersonalStPeriods(def st, def koef)
+{
+    //Только для КОКСов:
+    if(!isPersonalSt(st))
+    {
+        return;
+    }
+    def sourceSt = st.parent;
+    def periods = st.periods;
+    for(int i = 0; i < sourceSt?.periods?.size(); i++)
+    {
+        def koksPeriod = periods?.get(i);
+        def sourceStPeriod = sourceSt?.periods?.get(i);
+        koksPeriod.startTime = sourceStPeriod.startTime;
+        koksPeriod.endTime = sourceStPeriod.startTime + ((sourceStPeriod.endTime - sourceStPeriod.startTime) * koef);
+    }
+    api.utils.edit(st, ['periods' : periods]);
+}
+
+/**
+ * Обогащает персональный класс сотрудника информацией о планируемых отпусках, отгулах, болезнях и т.д. с
+ * целью учета этой информации при планировании ресурсов разработки
+ * @param st - персональный класс обслуживания сотрудника
+ */
+def updatePersonalStExclusions(def st)
+{
+    //Только для КОКСов:
+    if(isPersonalSt(st))
+    {
+        def voc = listPlannedVocations(st?.employee);
+        def currentDate = new Date();
+        voc?.each{
+            def exclDate = (it.dateFrom > currentDate) ? it.dateFrom : currentDate;
+            long interval = (it.dateTo.getTime() - exclDate.getTime())/(1000*60*60*24);
+            logger.info('Interval: ' + interval + ' days')
+            if(interval >=0 && interval < MAX_VOCATION_LEN)
+            {
+                while(exclDate <= it.dateTo)
+                {
+                    logger.info('Creating exclusion for st ' + st.UUID + ' on date ' + exclDate.toString());
+                    //см.: https://naupp.naumen.ru/sd/operator/#uuid:domesticsup$116364439,
+                    def startTime = 0;
+                    def endTime = 86400000 - 1;//24 часа
+                    //После исправления дефекта https://naupp.naumen.ru/sd/operator/#uuid:smrmTask$92708503
+                    //переписать на создание исключений без периодов
+                    api.serviceTime.createExclusionApproved(st.UUID, exclDate, startTime, endTime);
+                    exclDate = exclDate.plus(1);
+                }
+            }
+        }
+    }
+}
+
+// *************** </Обогащение классов обслуживания> ****************
