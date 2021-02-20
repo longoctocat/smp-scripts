@@ -408,3 +408,40 @@ def createStabilizationAndVerificationTasks(def release, def deadline, def autho
 	return createdTasks;
 }
 // *************** </Создание задач на стабилизацию и верификацию> ***************
+
+// *************** <Перенос ТЗТ и задач между проектами> ***************
+
+/**
+ * Перенос трудозатрат с проекта на проект
+ *
+ * @param oldProject - проект с которого переносим ТЗТ (utils.get('allprojects$56531501'))
+ * @param newProject - проект на который переносим ТЗТ (целевой)
+ * @param date - // дата относительно которой фильтруем ТЗТ (Date.parse('dd.MM.yyyy', '03.10.2019'))
+ */
+def changeTZTProject(def oldProject, def newProject, def date)
+{
+	///Перенос ТЗТ
+	//op.gt(date) - все даты позже указанной ; op.lt(date) - все даты меньше указанной
+	def reports = utils.find('report',['linkProjects':oldProject,'dateReort':op.gt(date)])
+	for(rep in reports)
+	{
+		api.tx.call{utils.edit(rep, ['linkProjects':newProject], true)}
+	}
+}
+
+/**
+ * Перенос задач c проекта на проект
+ *
+ * @param oldProject - проект с которого переносим ТЗТ (utils.get('allprojects$56531501'))
+ * @param newProject - проект на который переносим ТЗТ (целевой)
+ */
+def changeTasksProject(def oldProject, def newProject)
+{
+	def tasks = utils.find('smrmTask',[state:op.not('closed'), 'projectpp' : oldProject])
+	tasks.each{task ->
+		api.tx.call{utils.editWithoutEventActions(task, ['projectpp' : newProject])}
+	}
+	return tasks?.size()
+}
+
+// *************** </Перенос ТЗТ и задач между проектами> ***************
