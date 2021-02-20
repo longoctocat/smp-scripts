@@ -764,4 +764,50 @@ def updatePersonalStExclusions(def st)
     }
 }
 
+/**
+ * Возвращает (при необходимоси создает) персональный класс обслуживания для разработчика, обогащая его
+ * инофрмацией об отпусках/отгулах/болезнях, а также корректируя время обслуживания в соответствии с
+ * профилем разработки
+ * @param employee - сотрудник (разработчик), для которого требуется получить персонвльный класс обслуживания
+ * @param needUpdate - требуется ли обновлять информацию о периодах обслуживания и исключениях в случае, если
+ * персональный класс обслуживания уже создан
+ * @return персональный класс обслуживания разработчика либо null, если переданный сотрудник не разработчик
+ * или у него не определен класс обслуживания
+ */
+def getDevPersonalSt(def employee, def needUpdate = false)
+{
+    if(!isDeveloper(employee) || !employee.timeWork)
+    {
+        logger.error("Can't get Personal Service Time for employee " + employee?.getTilte() +
+                ": user is not developer or Service Time (timeWork) not specified");
+        return null;
+    }
+    def personalSt = api.serviceTime.getPersonalServiceTime(employee);
+    def justCreated = false;
+    if(!personalSt)
+    {
+        personalSt = api.serviceTime.createPersonalServiceTime(employee.timeWork, employee, true);
+        justCreated = true;
+    }
+    if(justCreated || needUpdate)
+    {
+        def koef = getProfKoef(employee?.devProfile);
+        if(koef == 0)
+        {
+            logger.info("Developer profile for employee " + employee?.getTilte() + " is incorrect. Trying to recreate");
+            //api.tx.call {
+            utils.edit( employee, ['devProfile' : toJsonString(createDevProfile(employee))]);
+            //}
+            koef = getProfKoef(employee?.devProfile);
+            if(koef == 0)
+            {
+                utils.throwReadableException("Can't create developer profile for employee " + employee?.getTilte());
+            }
+        }
+        updatePersonalStPeriods(personalSt, koef);
+        updatePersonalStExclusions(personalSt);
+    }
+    return personalSt;
+}
+
 // *************** </Обогащение классов обслуживания> ****************
