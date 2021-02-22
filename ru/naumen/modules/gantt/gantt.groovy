@@ -170,7 +170,8 @@ def getServiceTimeForCurrentDate(def user)
 
 def getUserServiceTime(def user)
 {
-    return user?.timeWork == null ? getDefaultServiceTime() : user.timeWork;
+    //return user?.timeWork == null ? getDefaultServiceTime() : user.timeWork;
+    return getDevPersonalSt(user);
 }
 
 /**
@@ -204,9 +205,13 @@ def getExpectedEndDate(def task, def expDevStart)
     //ответственный разработчик
     def user = task.respDevelop;
     def startDate = task.devStart == null ? expDevStart : task.devStart;
+    //коэффициент производительности разработчика для данного типа задачи
+    def koef = getDevPerfKoefByTask(user, task);
     //Изначальное планируемое время завершения разработки: дата начала разработки + оценка разработки с учетом класса обслуживания
-    def plannedDate = api.timing.addWorkingHours(startDate, getTaskEstDevTimeInHours(task), getUserServiceTime(user), user.timeZone);
+    //и коэффициента производительности
+    def plannedDate = api.timing.addWorkingHours(startDate, (int)(getTaskEstDevTimeInHours(task) * koef), getUserServiceTime(user), user.timeZone);
     //Разница между ожидаемым временем по классу обслуживания, прошедшим с начала разработки и списанными ТЗТ на задачу (мс)
+    //Здесь коэффициент производительности не учитываем, так как мы его учли выше при рассчете изначально планируемого времени завершения разработки
     def progressDeltaMs = getTaskServiceTimeMills(task, user) - (getTztOnTaskByUserInHours(task, user) * 60 * 60 * 1000);
     //Добавляем к изначально-запланированной дате завершения разницу между полным временем обслуживания и фактическими ТЗТ (в часах).
     //Если списано больше ТЗТ (например, работал в выходные), то ожидаемое время завершения разработки уменьшится
@@ -528,6 +533,18 @@ def getPerfDev(def jsonString)
 }
 
 /**
+ * Возвращает коэффициент производительности разработчика в зависимости от типа задачи
+ * @param employee - разработчик
+ * @param task - задача
+ * @return коэффициент производительности разработчика для данного типа задач.
+ */
+def getDevPerfKoefByTask(def employee, def task)
+{
+    def jsonProfile = employee?.devProfile;
+    return 'bug' == task?.metaClass.code ? getPerfBug(jsonProfile) : getPerfDev(jsonProfile);
+}
+
+/**
  * Рассчитывает коэффициент ТЗТ на разработку (“prof”), то есть отношение ТЗТ, списанных на задачи разработки
  * (devTask) в которых данный сотрудник является ответственным разработчиком, к общему объему списанных ТЗТ
  * за некоторый период времени (например, полгода) и возвращает их в виде мапы с ключами:
@@ -778,21 +795,21 @@ def updatePersonalStExclusions(def st)
  * @param needUpdate - требуется ли обновлять информацию о периодах обслуживания и исключениях в случае, если
  * персональный класс обслуживания уже создан
  * @return персональный класс обслуживания разработчика либо null, если переданный сотрудник не разработчик
- * или у него не определен класс обслуживания
  */
 def getDevPersonalSt(def employee, def needUpdate = false)
 {
-    if(!isDeveloper(employee) || !employee.timeWork)
+    if(!isDeveloper(employee))
     {
         logger.error("Can't get Personal Service Time for employee " + employee?.title +
-                ": user is not developer or Service Time (timeWork) not specified");
+                ": user is not developer");
         return null;
     }
     def personalSt = api.serviceTime.getPersonalServiceTime(employee);
     def justCreated = false;
     if(!personalSt)
     {
-        personalSt = api.serviceTime.createPersonalServiceTime(employee.timeWork, employee, true);
+        def st = employee?.timeWork == null ? getDefaultServiceTime() : employee.timeWork;
+        personalSt = api.serviceTime.createPersonalServiceTime(st, employee, true);
         justCreated = true;
     }
     if(justCreated || needUpdate)
