@@ -756,7 +756,13 @@ def updatePersonalStExclusions(def st)
                     def endTime = 86400000 - 1;//24 часа
                     //После исправления дефекта https://naupp.naumen.ru/sd/operator/#uuid:smrmTask$92708503
                     //переписать на создание исключений без периодов
-                    api.serviceTime.createExclusionApproved(st.UUID, exclDate, startTime, endTime);
+                    try {
+                        api.serviceTime.createExclusionApproved(st.UUID, exclDate, startTime, endTime);
+                    }
+                    catch(Exception e)
+                    {
+                        logger.error(e.getMessage());
+                    }
                     exclDate = exclDate.plus(1);
                 }
             }
@@ -778,7 +784,7 @@ def getDevPersonalSt(def employee, def needUpdate = false)
 {
     if(!isDeveloper(employee) || !employee.timeWork)
     {
-        logger.error("Can't get Personal Service Time for employee " + employee?.getTilte() +
+        logger.error("Can't get Personal Service Time for employee " + employee?.title +
                 ": user is not developer or Service Time (timeWork) not specified");
         return null;
     }
@@ -794,14 +800,14 @@ def getDevPersonalSt(def employee, def needUpdate = false)
         def koef = getProfKoef(employee?.devProfile);
         if(koef == 0)
         {
-            logger.info("Developer profile for employee " + employee?.getTilte() + " is incorrect. Trying to recreate");
+            logger.info("Developer profile for employee " + employee?.title + " is incorrect. Trying to recreate");
             //api.tx.call {
             utils.edit( employee, ['devProfile' : toJsonString(createDevProfile(employee))]);
             //}
             koef = getProfKoef(employee?.devProfile);
             if(koef == 0)
             {
-                utils.throwReadableException("Can't create developer profile for employee " + employee?.getTilte());
+                utils.throwReadableException("Can't create developer profile for employee " + employee?.title);
             }
         }
         updatePersonalStPeriods(personalSt, koef);
