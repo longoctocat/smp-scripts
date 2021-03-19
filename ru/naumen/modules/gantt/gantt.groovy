@@ -770,7 +770,7 @@ def updatePersonalStExclusions(def st)
                     logger.info('Creating exclusion for st ' + st.UUID + ' on date ' + exclDate.toString());
                     //см.: https://naupp.naumen.ru/sd/operator/#uuid:domesticsup$116364439,
                     def startTime = 0;
-                    def endTime = 86400000 - 1;//24 часа
+                    def endTime = 1*1000*60;//1м // 86400000 - 1;//24 часа
                     //После исправления дефекта https://naupp.naumen.ru/sd/operator/#uuid:smrmTask$92708503
                     //переписать на создание исключений без периодов
                     try {
@@ -804,14 +804,25 @@ def getDevPersonalSt(def employee, def needUpdate = false)
                 ": user is not developer");
         return null;
     }
-    def personalSt = api.serviceTime.getPersonalServiceTime(employee);
+    def personalStUUID, personalSt;
+    api.tx.call {
+        //api.tx.setReadOnly();
+        personalSt = api.serviceTime.getPersonalServiceTime(employee);
+        personalStUUID = personalSt?.UUID;
+    }
     def justCreated = false;
-    if(!personalSt)
+    if(!personalStUUID)
     {
         def st = employee?.timeWork == null ? getDefaultServiceTime() : employee.timeWork;
-        personalSt = api.serviceTime.createPersonalServiceTime(st, employee, true);
+        api.tx.call {
+            personalSt = api.serviceTime.createPersonalServiceTime(st, employee, true);
+            personalStUUID = personalSt?.UUID;
+            logger.info("**** personalSt created with UUID: " + personalStUUID);
+        }
         justCreated = true;
     }
+    //Переподнимаем объект, так как он может быть создан в другой транзакции
+    personalSt = utils.get(personalStUUID);
     if(justCreated || needUpdate)
     {
         def koef = getProfKoef(employee?.devProfile);
