@@ -168,10 +168,10 @@ def getServiceTimeForCurrentDate(def user)
     return api.timing.addWorkingHours(null, 0, serviceTime, user?.timeZone);
 }
 
-def getUserServiceTime(def user)
+def getUserServiceTime(def user, def needUpdate = false)
 {
     //return user?.timeWork == null ? getDefaultServiceTime() : user.timeWork;
-    return getDevPersonalSt(user);
+    return getDevPersonalSt(user, needUpdate);
 }
 
 /**
@@ -228,6 +228,8 @@ def getExpectedEndDate(def task, def expDevStart)
  */
 def calcExpectedDatesForEmplTasks(def user)
 {
+    //Явно обновляем информацию персонального класса абслуживания
+    getUserServiceTime(user, true);
     calcExpectedDatesForTasks(getNotClosedUserTasks(user));
 }
 

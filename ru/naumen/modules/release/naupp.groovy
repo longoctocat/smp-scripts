@@ -29,7 +29,7 @@ package ru.naumen.modules.release;
 	 def showOnly = true;
 	 */
 	 
-	 objs = utils.find(fqn, ['responsibleEmployee' : empl, 'responsibleTeam' : srcTeam]);
+	 objs = utils.find(fqn, ['responsibleEmployee' : emp, 'responsibleTeam' : srcTeam]);
 	 result = '';
 	 objs.each{
 	   result += it.UUID + '<br/>';
